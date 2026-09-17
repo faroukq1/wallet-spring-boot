@@ -19,6 +19,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 import static org.hamcrest.Matchers.blankOrNullString;
 import static org.hamcrest.Matchers.not;
@@ -288,5 +289,47 @@ class AuthFlowIntegrationTest {
 
         assertEquals(0, new BigDecimal("500.00")
                 .compareTo(accountRepository.findById(adminAccountId).orElseThrow().getBalance()));
+    }
+
+    @Test
+    void transfer_withSameIdempotencyKeyTwice_returns409AndMovesMoneyOnce() throws Exception {
+        String token = login("alice", "password");
+        String key = "it-" + UUID.randomUUID();
+        String body = "{\"sourceAccountId\": " + aliceAccountId
+                + ", \"destinationAccountId\": " + adminAccountId
+                + ", \"amount\": 10.00, \"idempotencyKey\": \"" + key + "\"}";
+
+        mockMvc.perform(post("/transfers")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/transfers")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isConflict());
+
+        assertEquals(0, new BigDecimal("990.00")
+                .compareTo(accountRepository.findById(aliceAccountId).orElseThrow().getBalance()));
+        assertEquals(0, new BigDecimal("510.00")
+                .compareTo(accountRepository.findById(adminAccountId).orElseThrow().getBalance()));
+    }
+
+    @Test
+    void healthEndpoint_isPublicAndReportsUp() throws Exception {
+        mockMvc.perform(get("/actuator/health"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("UP"));
+    }
+
+    @Test
+    void unknownRoute_returns404Json() throws Exception {
+        String token = login("alice", "password");
+
+        mockMvc.perform(get("/does-not-exist")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isNotFound());
     }
 }

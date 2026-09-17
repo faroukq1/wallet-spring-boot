@@ -4,6 +4,11 @@ A REST API for a mini electronic wallet: deposit, withdraw, and transfer money b
 
 - **JWT authentication** — login to get a token, use it for every wallet call
 - **Concurrency-safe transfers** — pessimistic row locks + fixed lock ordering (no deadlocks) + optimistic `@Version`
+- **Idempotent transfers** — optional `idempotencyKey` makes a transfer safe to retry (second attempt → `409`)
+- **Full traceability** — successful operations are recorded as `SUCCESS`, operations rejected by business rules as `FAILED`
+- **Async audit + notification** — fired only after commit, on a bounded dedicated thread pool
+- **Health endpoint** — `GET /actuator/health` (public)
+- **Login rate limiting** — token bucket on `POST /auth/login` (configurable)
 - **OpenAPI 3 + Swagger UI** — every endpoint documented, interactive "Try it out"
 - **Flyway migrations** — schema and demo data applied automatically on startup
 - **PostgreSQL 16** — reliable persistence
@@ -110,8 +115,9 @@ Validation errors (400) additionally include a `details` object with field names
 | 400    | Validation failed, insufficient balance, invalid operation |
 | 401    | Missing/invalid/expired token, bad credentials |
 | 403    | Account blocked or inactive                    |
-| 404    | Account not found                              |
-| 409    | Duplicate transaction                          |
+| 404    | Account not found, unknown route               |
+| 409    | Duplicate transaction (idempotency key already used) |
+| 429    | Too many login attempts (rate limit)           |
 | 500    | Unexpected error                               |
 
 ---
@@ -231,10 +237,20 @@ Moves money from one account to another **atomically**. Both balances update or 
 **Response `200`**
 
 ```json
-{ "Message": "Transfer completed successfully" }
+{ "message": "Transfer completed successfully" }
 ```
 
 `400` (same account, invalid amount, insufficient balance), `401`, `403` (either account blocked), `404`, `409`.
+
+#### Idempotent transfers (retry-safe)
+
+Add an optional `idempotencyKey` to the body. If the same key is sent again, the transfer is **not executed twice**: the server replies `409` and the balances are left untouched.
+
+```json
+{ "sourceAccountId": 1, "destinationAccountId": 2, "amount": 50, "idempotencyKey": "client-op-1234" }
+```
+
+The key is stored in a unique partial index in the `transactions` table — the database, not the application, is the source of truth, so two concurrent retries are also safe.
 
 **curl**
 
@@ -249,7 +265,7 @@ curl -X POST http://localhost:8080/transfers \
 
 ### 6. Transaction history — `GET /accounts/{id}/transactions`
 
-Lists all transactions where the account is the source or destination.
+Lists all transactions where the account is the source or destination. Operations rejected by a business rule (insufficient balance, blocked account, transfer to self) are recorded with `"status": "FAILED"`, so the history reflects both successful and refused operations.
 
 **Response `200`** — array of transactions:
 
@@ -274,6 +290,22 @@ Lists all transactions where the account is the source or destination.
 ```bash
 curl http://localhost:8080/accounts/1/transactions -H "Authorization: Bearer $TOKEN"
 ```
+
+---
+
+### 7. Health — `GET /actuator/health`
+
+Public endpoint (no token required) exposing the service state:
+
+```json
+{ "status": "UP" }
+```
+
+---
+
+### 8. Login rate limiting
+
+`POST /auth/login` is protected by an in-memory token bucket: by default **10 attempts per minute per client IP**, then `429 Too Many Requests`. Loopback clients are exempt so local tooling is not throttled. Configure or disable it with the `LOGIN_RATE_LIMIT` environment variable (`0` disables it).
 
 ---
 
@@ -330,9 +362,10 @@ The transfer endpoint is the interesting part. Two problems are solved:
 
 Accounts also carry an optimistic `@Version` column as a second layer of protection.
 
-**Proof** — `TransferServiceConcurrencyTest` runs two scenarios against a real database:
+**Proof** — `TransferServiceConcurrencyTest` runs three scenarios against a real database:
 - 10 parallel withdrawals of 100 on an account with 1000 → all 10 succeed, final balance is exactly 0.
 - 5 parallel A→B transfers racing 5 parallel B→A transfers → no deadlock, net balance unchanged.
+- 5 parallel withdrawals racing 5 parallel transfers out of the same source account → source exactly 0, destination exactly 1500.
 
 ```bash
 ./gradlew test
@@ -343,6 +376,11 @@ Accounts also carry an optimistic `@Version` column as a second layer of protect
 ### Async audit events
 
 After every successful deposit/withdraw/transfer, an `OperationCompletedEvent` is published. It only fires **after the DB transaction commits** (`@TransactionalEventListener(AFTER_COMMIT)`) and runs on a separate thread (`@Async`), so auditing never slows down or blocks the request.
+
+- **No false notifications**: if the main transaction rolls back (insufficient balance, blocked account, DB error), the event is never delivered — an operation that did not happen is never notified.
+- **Bounded executor**: `AsyncConfig` defines a dedicated `ThreadPoolTaskExecutor` (`wallet-async-*`, 2–4 threads, queue of 100) instead of Spring's unbounded default.
+- **Structured logs**: the audit trace and the simulated notification are emitted as key=value SLF4J logs (`AUDIT operation_type=... amount=...`, `Notification sent to ...`).
+- **Failed operations** are traced synchronously in a `REQUIRES_NEW` transaction (see `TransactionRecorder`), so the trace survives the rollback of the failing operation.
 
 ---
 
@@ -357,6 +395,7 @@ Everything is configurable via environment variables:
 | `DB_PASSWORD`       | `wallet`                                         | Database password                |
 | `JWT_SECRET`        | `change-me-this-secret-must-be-at-least-32-bytes-long` | HS256 signing key (≥ 32 bytes) |
 | `JWT_EXPIRATION_MS` | `3600000`                                        | Token lifetime in ms (1 hour)    |
+| `LOGIN_RATE_LIMIT`  | `10`                                             | Max login attempts per minute per client IP (`0` disables) |
 
 ---
 
@@ -373,14 +412,14 @@ src/main/java/com/wallet/wallet
 ├── dto/                          # request/response records with validation
 ├── entity/                       # Account, Transaction (+ enums)
 ├── repository/                   # Spring Data JPA repositories (incl. row-lock query)
-├── service/                      # AccountService, TransferService (business logic)
-├── security/                     # JWT filter, JWT service, user details, security config
+├── service/                      # AccountService, TransferService, TransactionRecorder (business logic)
+├── security/                     # JWT filter/service, user details, security config, login rate limiter
 ├── event/                        # async post-commit audit events
 └── exception/                    # domain exceptions + global handler
 
 src/main/resources
 ├── application.yml               # config (env-var driven)
-└── db/migration/                 # Flyway migrations (V1 schema, V2 demo seed)
+└── db/migration/                 # Flyway migrations (V1 schema, V2 demo seed, V3 sequence sync + idempotency)
 
 src/test/java/com/wallet/wallet
 └── service/TransferServiceConcurrencyTest.java   # concurrency proof

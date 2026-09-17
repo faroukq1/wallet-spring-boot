@@ -172,4 +172,64 @@ class TransferServiceConcurrencyTest {
                 "Dest balance should be unchanged (1000.00)");
         assertEquals(0, failures.get(), "No transfer should fail");
     }
+
+    // ==========================================================
+    // TEST 3: Withdrawals AND transfers racing on the SAME source
+    // 5 threads withdraw 100, 5 threads transfer 100 to dest.
+    // Expected: all succeed, source exactly 0, dest exactly 1500.
+    // ==========================================================
+    @Test
+    void mixedWithdrawalsAndTransfers_shouldStayConsistent() throws Exception {
+        int withdrawThreads = 5;
+        int transferThreads = 5;
+        BigDecimal amount = new BigDecimal("100.00");
+
+        ExecutorService executor = Executors.newFixedThreadPool(withdrawThreads + transferThreads);
+        CountDownLatch startGate = new CountDownLatch(1);
+        CountDownLatch doneGate = new CountDownLatch(withdrawThreads + transferThreads);
+        AtomicInteger failures = new AtomicInteger(0);
+
+        for (int i = 0; i < withdrawThreads; i++) {
+            executor.submit(() -> {
+                try {
+                    startGate.await();
+                    accountService.withdraw(sourceId, amount, "concurrency-test", true);
+                } catch (Exception e) {
+                    failures.incrementAndGet();
+                    System.err.println("Mixed withdrawal failed: " + e.getMessage());
+                } finally {
+                    doneGate.countDown();
+                }
+            });
+        }
+        for (int i = 0; i < transferThreads; i++) {
+            executor.submit(() -> {
+                try {
+                    startGate.await();
+                    transferService.transfer(sourceId, destId, amount, "concurrency-test", true);
+                } catch (Exception e) {
+                    failures.incrementAndGet();
+                    System.err.println("Mixed transfer failed: " + e.getMessage());
+                } finally {
+                    doneGate.countDown();
+                }
+            });
+        }
+
+        // 🔥 FIRE ALL THREADS AT ONCE
+        startGate.countDown();
+
+        boolean completed = doneGate.await(30, TimeUnit.SECONDS);
+        executor.shutdown();
+        assertTrue(completed, "Threads did not complete in time");
+
+        Account source = accountRepository.findById(sourceId).orElseThrow();
+        Account dest = accountRepository.findById(destId).orElseThrow();
+
+        assertEquals(0, source.getBalance().compareTo(new BigDecimal("0.00")),
+                "5x100 withdrawals + 5x100 transfers should drain the source exactly");
+        assertEquals(0, dest.getBalance().compareTo(new BigDecimal("1500.00")),
+                "Destination should receive exactly 5x100 transfers");
+        assertEquals(0, failures.get(), "All operations should succeed");
+    }
 }

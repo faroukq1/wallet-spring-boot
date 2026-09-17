@@ -3,9 +3,11 @@ package com.wallet.wallet.service;
 import com.wallet.wallet.entity.Account;
 import com.wallet.wallet.entity.AccountStatus;
 import com.wallet.wallet.entity.Transaction;
+import com.wallet.wallet.entity.TransactionStatus;
 import com.wallet.wallet.entity.TransactionType;
 import com.wallet.wallet.exception.AccountBlockedException;
 import com.wallet.wallet.exception.AccountNotFoundException;
+import com.wallet.wallet.exception.DuplicateTransactionException;
 import com.wallet.wallet.exception.InsufficientBalanceException;
 import com.wallet.wallet.exception.InvalidOperationException;
 import com.wallet.wallet.exception.UnauthorizedAccessException;
@@ -18,6 +20,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import java.math.BigDecimal;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -145,5 +148,35 @@ class TransferServiceIntegrationTest {
                 () -> transferService.transfer(sourceId, destId, new BigDecimal("10.00"), "alice", false));
 
         assertEquals(0, new BigDecimal("500.00").compareTo(balance(sourceId)));
+    }
+
+    @Test
+    void transfer_insufficientBalance_recordsFailedTrace() {
+        BigDecimal amount = new BigDecimal("999.00");
+        assertThrows(InsufficientBalanceException.class,
+                () -> transferService.transfer(sourceId, destId, amount, "integration", true));
+
+        boolean failedTrace = transactionRepository
+                .findBySourceAccountIdOrDestinationAccountId(sourceId, destId).stream()
+                .anyMatch(tx -> tx.getType() == TransactionType.TRANSFER
+                        && tx.getStatus() == TransactionStatus.FAILED
+                        && sourceId.equals(tx.getSourceAccountId())
+                        && destId.equals(tx.getDestinationAccountId()));
+        assertTrue(failedTrace, "A FAILED TRANSFER trace should survive the rollback");
+    }
+
+    @Test
+    void transfer_sameIdempotencyKeyTwice_secondAttemptIsRejected() {
+        String key = "it-" + UUID.randomUUID();
+        BigDecimal amount = new BigDecimal("100.00");
+
+        transferService.transfer(sourceId, destId, amount, "integration", true, key);
+
+        assertThrows(DuplicateTransactionException.class,
+                () -> transferService.transfer(sourceId, destId, amount, "integration", true, key));
+
+        // money moved exactly once
+        assertEquals(0, new BigDecimal("400.00").compareTo(balance(sourceId)));
+        assertEquals(0, new BigDecimal("200.00").compareTo(balance(destId)));
     }
 }

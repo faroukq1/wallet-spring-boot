@@ -3,6 +3,7 @@ package com.wallet.wallet.config;
 import com.wallet.wallet.security.CustomUserDetailsService;
 import com.wallet.wallet.security.JwtFilter;
 import com.wallet.wallet.security.JwtService;
+import com.wallet.wallet.security.LoginRateLimitFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -24,10 +25,14 @@ public class SecurityConfig {
 
     private final JwtService jwtService;
     private final CustomUserDetailsService userDetailsService;
+    private final LoginRateLimitFilter loginRateLimitFilter;
 
-    public SecurityConfig(JwtService jwtService, CustomUserDetailsService userDetailsService) {
+    public SecurityConfig(JwtService jwtService,
+                          CustomUserDetailsService userDetailsService,
+                          LoginRateLimitFilter loginRateLimitFilter) {
         this.jwtService = jwtService;
         this.userDetailsService = userDetailsService;
+        this.loginRateLimitFilter = loginRateLimitFilter;
     }
 
     @Bean
@@ -49,6 +54,7 @@ public class SecurityConfig {
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint((request, response, authException) ->
                                 response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized")))
+                .addFilterBefore(loginRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(new JwtFilter(jwtService, userDetailsService),
                         UsernamePasswordAuthenticationFilter.class);
         return http.build();

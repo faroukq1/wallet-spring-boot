@@ -63,11 +63,12 @@ dependencies {
 
     // API DOCUMENTATION
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1'
+
     // ==========================================================
-    // PHASE 8 - BONUS (uncomment if you do bonus features)
+    // PHASE 8 - BONUS
     // ==========================================================
-    // implementation 'org.springframework.boot:spring-boot-starter-actuator'
-    // implementation 'com.bucket4j:bucket4j-core:8.10.1'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'com.bucket4j:bucket4j-core:8.10.1'
 }
 
 tasks.named('test') {

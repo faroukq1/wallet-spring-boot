@@ -1,6 +1,7 @@
 package com.wallet.wallet.service;
 
 import com.wallet.wallet.dto.AccountResponse;
+import com.wallet.wallet.dto.TransactionResponse;
 import com.wallet.wallet.entity.Account;
 import com.wallet.wallet.entity.AccountStatus;
 import com.wallet.wallet.entity.Transaction;
@@ -51,13 +52,16 @@ class AccountServiceUnitTest {
     private ApplicationEventPublisher eventPublisher;
     @Mock
     private CustomUserDetailsService userDetailsService;
+    @Mock
+    private TransactionRecorder transactionRecorder;
 
     private AccountService accountService;
     private Account account;
 
     @BeforeEach
     void setUp() {
-        accountService = new AccountService(accountRepository, transactionRepository, eventPublisher, userDetailsService);
+        accountService = new AccountService(accountRepository, transactionRepository, eventPublisher,
+                userDetailsService, transactionRecorder);
 
         account = new Account();
         account.setId(ACCOUNT_ID);
@@ -123,12 +127,14 @@ class AccountServiceUnitTest {
 
     @Test
     void withdraw_insufficientBalance_throwsAndChangesNothing() {
+        BigDecimal amount = new BigDecimal("1000.01");
         assertThrows(InsufficientBalanceException.class,
-                () -> accountService.withdraw(ACCOUNT_ID, new BigDecimal("1000.01"), "alice", false));
+                () -> accountService.withdraw(ACCOUNT_ID, amount, "alice", false));
 
         assertEquals(0, new BigDecimal("1000.00").compareTo(account.getBalance()));
         verify(accountRepository, never()).save(any());
         verify(transactionRepository, never()).save(any());
+        verify(transactionRecorder).recordFailed(TransactionType.WITHDRAW, amount, ACCOUNT_ID, null);
     }
 
     @Test
@@ -143,18 +149,22 @@ class AccountServiceUnitTest {
     void deposit_onBlockedAccount_throws() {
         account.setStatus(AccountStatus.BLOCKED);
 
+        BigDecimal amount = new BigDecimal("10.00");
         assertThrows(AccountBlockedException.class,
-                () -> accountService.deposit(ACCOUNT_ID, new BigDecimal("10.00"), "alice", false));
+                () -> accountService.deposit(ACCOUNT_ID, amount, "alice", false));
         verify(transactionRepository, never()).save(any());
+        verify(transactionRecorder).recordFailed(TransactionType.DEPOSIT, amount, null, ACCOUNT_ID);
     }
 
     @Test
     void withdraw_fromBlockedAccount_throws() {
         account.setStatus(AccountStatus.BLOCKED);
 
+        BigDecimal amount = new BigDecimal("10.00");
         assertThrows(AccountBlockedException.class,
-                () -> accountService.withdraw(ACCOUNT_ID, new BigDecimal("10.00"), "alice", false));
+                () -> accountService.withdraw(ACCOUNT_ID, amount, "alice", false));
         verify(transactionRepository, never()).save(any());
+        verify(transactionRecorder).recordFailed(TransactionType.WITHDRAW, amount, ACCOUNT_ID, null);
     }
 
     @Test
@@ -196,13 +206,17 @@ class AccountServiceUnitTest {
         tx.setId(7L);
         tx.setType(TransactionType.DEPOSIT);
         tx.setAmount(new BigDecimal("10.00"));
+        tx.setStatus(TransactionStatus.SUCCESS);
         when(transactionRepository.findBySourceAccountIdOrDestinationAccountId(ACCOUNT_ID, ACCOUNT_ID))
                 .thenReturn(List.of(tx));
 
-        List<Transaction> history = accountService.getHistory(ACCOUNT_ID, "alice", false);
+        List<TransactionResponse> history = accountService.getHistory(ACCOUNT_ID, "alice", false);
 
         assertEquals(1, history.size());
-        assertSame(tx, history.get(0));
+        assertEquals(7L, history.get(0).id());
+        assertEquals("DEPOSIT", history.get(0).type());
+        assertEquals("SUCCESS", history.get(0).status());
+        assertEquals(0, new BigDecimal("10.00").compareTo(history.get(0).amount()));
     }
 
     @Test

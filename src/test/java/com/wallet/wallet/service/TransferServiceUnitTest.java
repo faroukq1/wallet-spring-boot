@@ -52,13 +52,16 @@ class TransferServiceUnitTest {
     private ApplicationEventPublisher eventPublisher;
     @Mock
     private CustomUserDetailsService userDetailsService;
+    @Mock
+    private TransactionRecorder transactionRecorder;
 
     private TransferService transferService;
     private final Map<Long, Account> accountsById = new HashMap<>();
 
     @BeforeEach
     void setUp() {
-        transferService = new TransferService(accountRepository, transactionRepository, eventPublisher, userDetailsService);
+        transferService = new TransferService(accountRepository, transactionRepository, eventPublisher,
+                userDetailsService, transactionRecorder);
 
         accountsById.clear();
         accountsById.put(SOURCE_ID, account(SOURCE_ID, "500.00", 900L, AccountStatus.ACTIVE));
@@ -123,40 +126,48 @@ class TransferServiceUnitTest {
 
     @Test
     void transfer_toSameAccount_throwsInvalidOperation() {
+        BigDecimal amount = new BigDecimal("10.00");
         assertThrows(InvalidOperationException.class,
-                () -> transferService.transfer(SOURCE_ID, SOURCE_ID, new BigDecimal("10.00"), "admin", true));
+                () -> transferService.transfer(SOURCE_ID, SOURCE_ID, amount, "admin", true));
 
         verify(accountRepository, never()).save(any());
         verify(transactionRepository, never()).save(any());
+        verify(transactionRecorder).recordFailed(TransactionType.TRANSFER, amount, SOURCE_ID, SOURCE_ID);
     }
 
     @Test
     void transfer_insufficientBalance_throwsAndChangesNothing() {
+        BigDecimal amount = new BigDecimal("501.00");
         assertThrows(InsufficientBalanceException.class,
-                () -> transferService.transfer(SOURCE_ID, DEST_ID, new BigDecimal("501.00"), "admin", true));
+                () -> transferService.transfer(SOURCE_ID, DEST_ID, amount, "admin", true));
 
         assertEquals(0, new BigDecimal("500.00").compareTo(accountsById.get(SOURCE_ID).getBalance()));
         assertEquals(0, new BigDecimal("100.00").compareTo(accountsById.get(DEST_ID).getBalance()));
         verify(accountRepository, never()).save(any());
         verify(transactionRepository, never()).save(any());
+        verify(transactionRecorder).recordFailed(TransactionType.TRANSFER, amount, SOURCE_ID, DEST_ID);
     }
 
     @Test
     void transfer_sourceBlocked_throws() {
         accountsById.get(SOURCE_ID).setStatus(AccountStatus.BLOCKED);
+        BigDecimal amount = new BigDecimal("10.00");
 
         assertThrows(AccountBlockedException.class,
-                () -> transferService.transfer(SOURCE_ID, DEST_ID, new BigDecimal("10.00"), "admin", true));
+                () -> transferService.transfer(SOURCE_ID, DEST_ID, amount, "admin", true));
         verify(transactionRepository, never()).save(any());
+        verify(transactionRecorder).recordFailed(TransactionType.TRANSFER, amount, SOURCE_ID, DEST_ID);
     }
 
     @Test
     void transfer_destinationBlocked_throws() {
         accountsById.get(DEST_ID).setStatus(AccountStatus.BLOCKED);
+        BigDecimal amount = new BigDecimal("10.00");
 
         assertThrows(AccountBlockedException.class,
-                () -> transferService.transfer(SOURCE_ID, DEST_ID, new BigDecimal("10.00"), "admin", true));
+                () -> transferService.transfer(SOURCE_ID, DEST_ID, amount, "admin", true));
         verify(transactionRepository, never()).save(any());
+        verify(transactionRecorder).recordFailed(TransactionType.TRANSFER, amount, SOURCE_ID, DEST_ID);
     }
 
     @Test

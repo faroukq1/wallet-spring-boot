@@ -2,6 +2,7 @@ package com.wallet.wallet.controller;
 
 
 import com.wallet.wallet.dto.TransferRequest;
+import com.wallet.wallet.dto.TransferResponse;
 import com.wallet.wallet.service.TransferService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -18,8 +19,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.Map;
-
 @RestController
 @RequestMapping("/transfers")
 @Tag(name = "Transfers", description = "Transfer money between accounts")
@@ -33,18 +32,19 @@ public class TransferController {
     @PostMapping
     @Operation(
             summary = "Transfer money between accounts",
-            description = "Moves an amount from the source account to the destination account atomically. Concurrency-safe."
+            description = "Moves an amount from the source account to the destination account atomically. "
+                    + "Concurrency-safe. Optionally idempotent: pass an idempotencyKey to make the transfer safe to retry."
     )
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Transfer completed",
-                    content = @Content(schema = @Schema(implementation = Map.class, example = "{\"Message\": \"Transfer completed successfully\"}"))),
+                    content = @Content(schema = @Schema(implementation = TransferResponse.class))),
             @ApiResponse(responseCode = "400", description = "Invalid amount, insufficient balance or invalid operation"),
             @ApiResponse(responseCode = "401", description = "Not authenticated"),
             @ApiResponse(responseCode = "403", description = "Account blocked or inactive"),
             @ApiResponse(responseCode = "404", description = "Account not found"),
-            @ApiResponse(responseCode = "409", description = "Duplicate transaction")
+            @ApiResponse(responseCode = "409", description = "Duplicate transaction (idempotency key already used)")
     })
-    public ResponseEntity<Map<String, String>> transfer (
+    public ResponseEntity<TransferResponse> transfer (
             @Valid @RequestBody TransferRequest request
             ) {
         transferService.transfer(
@@ -52,10 +52,11 @@ public class TransferController {
                 request.destinationAccountId(),
                 request.amount(),
                 currentUsername(),
-                isCurrentUserAdmin()
+                isCurrentUserAdmin(),
+                request.idempotencyKey()
         );
 
-        return ResponseEntity.ok(Map.of("Message", "Transfer completed successfully"));
+        return ResponseEntity.ok(new TransferResponse("Transfer completed successfully"));
     }
 
     private static String currentUsername() {
