@@ -40,6 +40,9 @@ public class Transaction {
     @Column(nullable = false)
     private LocalDateTime timestamp;
 
+    @Column(name = "idempotency_key", length = 64)
+    private String idempotencyKey;
+
     @PrePersist
     protected void onCreate() {
         this.timestamp = LocalDateTime.now();

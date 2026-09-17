@@ -1,6 +1,7 @@
 package com.wallet.wallet.service;
 
 import com.wallet.wallet.dto.AccountResponse;
+import com.wallet.wallet.dto.TransactionResponse;
 import com.wallet.wallet.entity.Account;
 import com.wallet.wallet.entity.AccountStatus;
 import com.wallet.wallet.entity.Transaction;
@@ -30,17 +31,20 @@ public class AccountService {
     private final TransactionRepository transactionRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final CustomUserDetailsService userDetailsService;
+    private final TransactionRecorder transactionRecorder;
 
     // Constructor Injection: Spring provides the repositories.
     public AccountService(AccountRepository accountRepository,
                           TransactionRepository transactionRepository,
                           ApplicationEventPublisher eventPublisher,
-                          CustomUserDetailsService userDetailsService
+                          CustomUserDetailsService userDetailsService,
+                          TransactionRecorder transactionRecorder
                           ) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.eventPublisher = eventPublisher;
         this.userDetailsService = userDetailsService;
+        this.transactionRecorder = transactionRecorder;
     }
 
     // deposit logic
@@ -50,7 +54,11 @@ public class AccountService {
                 .orElseThrow(() -> new AccountNotFoundException("Account not found: " + accountId));
 
         validateOwnership(account, accountId, currentUsername, isAdmin);
-        validateAccountStatus(account);
+
+        if (account.getStatus() == AccountStatus.BLOCKED) {
+            transactionRecorder.recordFailed(TransactionType.DEPOSIT, amount, null, accountId);
+            throw new AccountBlockedException("Account " + accountId + " is blocked");
+        }
 
         account.setBalance(account.getBalance().add(amount));
         accountRepository.save(account);
@@ -82,9 +90,14 @@ public class AccountService {
                 .orElseThrow(() -> new AccountNotFoundException("Account not found: " + accountId));
 
         validateOwnership(account, accountId, currentUsername, isAdmin);
-        validateAccountStatus(account);
+
+        if (account.getStatus() == AccountStatus.BLOCKED) {
+            transactionRecorder.recordFailed(TransactionType.WITHDRAW, amount, accountId, null);
+            throw new AccountBlockedException("Account " + accountId + " is blocked");
+        }
 
         if (account.getBalance().compareTo(amount) < 0) {
+            transactionRecorder.recordFailed(TransactionType.WITHDRAW, amount, accountId, null);
             throw new InsufficientBalanceException(
                     "Insufficient balance for account " + accountId +
                             ". Available: " + account.getBalance() + ", Requested: " + amount
@@ -120,18 +133,24 @@ public class AccountService {
                 .orElseThrow(() -> new AccountNotFoundException("Account not found: " + accountId));
 
         validateOwnership(account, accountId, currentUsername, isAdmin);
-        validateAccountStatus(account);
+
+        if (account.getStatus() == AccountStatus.BLOCKED) {
+            throw new AccountBlockedException("Account " + accountId + " is blocked");
+        }
         return new AccountResponse(account.getId(), account.getBalance(), account.getStatus().name());
     }
 
 
     // history of transactions
-    public List<Transaction> getHistory (Long accountId, String currentUsername, boolean isAdmin) {
+    public List<TransactionResponse> getHistory (Long accountId, String currentUsername, boolean isAdmin) {
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new AccountNotFoundException("Account not found: " + accountId));
 
         validateOwnership(account, accountId, currentUsername, isAdmin);
-        return transactionRepository.findBySourceAccountIdOrDestinationAccountId(accountId, accountId);
+        return transactionRepository.findBySourceAccountIdOrDestinationAccountId(accountId, accountId)
+                .stream()
+                .map(TransactionResponse::from)
+                .toList();
     }
 
     // helper functions
@@ -142,13 +161,6 @@ public class AccountService {
         Long currentUserId = userDetailsService.getOwnerIdForUsername(currentUsername);
         if (currentUserId == null || !account.getOwnerId().equals(currentUserId)) {
             throw new UnauthorizedAccessException("You do not own account " + accountId);
-        }
-    }
-
-    private void validateAccountStatus (Account account) {
-        switch (account.getStatus()) {
-            case ACTIVE -> { /*it's fine he can pass */ }
-            case BLOCKED -> throw new AccountBlockedException("Account " + account.getId() + " is blocked");
         }
     }
 }

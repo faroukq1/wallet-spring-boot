@@ -2,8 +2,8 @@ package com.wallet.wallet.controller;
 
 import com.wallet.wallet.dto.AccountResponse;
 import com.wallet.wallet.dto.DepositRequest;
+import com.wallet.wallet.dto.TransactionResponse;
 import com.wallet.wallet.dto.WithdrawRequest;
-import com.wallet.wallet.entity.Transaction;
 import com.wallet.wallet.service.AccountService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -89,11 +89,11 @@ public class AccountController {
     @Operation(summary = "Get an account's transaction history")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Transaction list",
-                    content = @Content(schema = @Schema(implementation = Transaction.class))),
+                    content = @Content(schema = @Schema(implementation = TransactionResponse.class))),
             @ApiResponse(responseCode = "401", description = "Not authenticated"),
             @ApiResponse(responseCode = "404", description = "Account not found")
     })
-    public ResponseEntity<List<Transaction>> getHistory(
+    public ResponseEntity<List<TransactionResponse>> getHistory(
             @Parameter(description = "ID of the account whose history to fetch", example = "1")
             @PathVariable Long id) {
         return ResponseEntity.ok(accountService.getHistory(id, currentUsername(), isCurrentUserAdmin()));
