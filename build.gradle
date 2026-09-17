@@ -31,9 +31,10 @@ dependencies {
     // ==========================================================
     runtimeOnly 'org.postgresql:postgresql'
 
-    // Flyway: database migrations. Note the separate 'flyway-database-postgresql'
-    // module -- since Flyway 10, PostgreSQL support is in a separate JAR.
-    implementation 'org.flywaydb:flyway-core'
+    // Flyway: database migrations. Spring Boot 4 requires the starter so the
+    // Flyway auto-configuration module is on the classpath. PostgreSQL support
+    // is in a separate JAR since Flyway 10.
+    implementation 'org.springframework.boot:spring-boot-starter-flyway'
     implementation 'org.flywaydb:flyway-database-postgresql'
 
     // ==========================================================
