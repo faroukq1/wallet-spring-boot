@@ -215,6 +215,62 @@ class AuthFlowIntegrationTest {
     }
 
     @Test
+    void deposit_amountWithThreeDecimals_returns400AndChangesNothing() throws Exception {
+        String token = login("alice", "password");
+
+        mockMvc.perform(post("/accounts/{id}/deposit", aliceAccountId)
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\": 0.005}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.details.amount").exists());
+
+        assertEquals(0, new BigDecimal("1000.00")
+                .compareTo(accountRepository.findById(aliceAccountId).orElseThrow().getBalance()));
+    }
+
+    @Test
+    void deposit_malformedJson_returns400() throws Exception {
+        String token = login("alice", "password");
+
+        mockMvc.perform(post("/accounts/{id}/deposit", aliceAccountId)
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\": not-json"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void deposit_stringAmount_returns400() throws Exception {
+        String token = login("alice", "password");
+
+        mockMvc.perform(post("/accounts/{id}/deposit", aliceAccountId)
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":\"not-a-number\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void deposit_wrongContentType_returns415() throws Exception {
+        String token = login("alice", "password");
+
+        mockMvc.perform(post("/accounts/{id}/deposit", aliceAccountId)
+                        .header("Authorization", bearer(token))
+                        .content("{\"amount\": 10.00}"))
+                .andExpect(status().isUnsupportedMediaType());
+    }
+
+    @Test
+    void nonNumericPathId_returns400() throws Exception {
+        String token = login("alice", "password");
+
+        mockMvc.perform(get("/accounts/{id}", "not-a-number")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void transfer_endToEnd_movesMoneyAndRecordsHistory() throws Exception {
         String token = login("alice", "password");
 
