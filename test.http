@@ -1,0 +1,91 @@
+###
+# curl -X POST http://localhost:8080/accounts/1/deposit
+#  -H "Content-Type: application/json"
+#  -d '{"amount": 250.00}'
+POST http://localhost:8080/accounts/1/deposit
+Content-Type: application/json
+
+{
+  "amount": 250.00
+}
+
+###
+
+# curl -X POST http://localhost:8080/transfers
+#  -H "Content-Type: application/json"
+#  -d '{"sourceAccountId":1, "destinationAccountId":2, "amount":100.00}'
+POST http://localhost:8080/transfers
+Content-Type: application/json
+
+{
+  "sourceAccountId": 1,
+  "destinationAccountId": 2,
+  "amount": 100.00
+}
+
+###
+
+# curl -X POST http://localhost:8080/accounts/2/withdraw
+#  -H "Content-Type: application/json"
+#  -d '{"amount": 99999.00}'
+POST http://localhost:8080/accounts/2/withdraw
+Content-Type: application/json
+
+{
+  "amount": 99999.00
+}
+
+###
+
+# curl -X POST http://localhost:8080/accounts/1/deposit
+#  -H "Content-Type: application/json"
+#  -d '{"amount": -50}'
+POST http://localhost:8080/accounts/1/deposit
+Content-Type: application/json
+
+{
+  "amount": -50
+}
+
+###
+
+# curl -X POST http://localhost:8080/accounts/999/deposit
+#  -H "Content-Type: application/json"
+#  -d '{"amount": 50}'
+POST http://localhost:8080/accounts/999/deposit
+Content-Type: application/json
+
+{
+  "amount": 50
+}
+
+###
+
+
+# curl -X POST http://localhost:8080/transfers
+#  -H "Content-Type: application/json"
+#  -d '{"sourceAccountId":1, "destinationAccountId":2, "amount":50.00}'
+# this after adding events
+POST http://localhost:8080/transfers
+Content-Type: application/json
+
+{
+  "sourceAccountId": 1,
+  "destinationAccountId": 2,
+  "amount": 50.00
+}
+
+###
+
+# curl -X POST http://localhost:8080/accounts/2/withdraw
+#  -H "Content-Type: application/json"
+#  -d '{"amount": 9999999.00}'
+# this after adding events
+POST http://localhost:8080/accounts/2/withdraw
+Content-Type: application/json
+
+{
+  "amount": 9999999.00
+}
+
+###

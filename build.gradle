@@ -1,0 +1,74 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '4.1.1'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.wallet'
+version = '0.0.1-SNAPSHOT'
+description = 'wallet'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // ==========================================================
+    // SPRING BOOT STARTERS (Core)
+    // ==========================================================
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+    // ==========================================================
+    // DATABASE
+    // ==========================================================
+    runtimeOnly 'org.postgresql:postgresql'
+
+    // Flyway: database migrations. Note the separate 'flyway-database-postgresql'
+    // module -- since Flyway 10, PostgreSQL support is in a separate JAR.
+    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+
+    // ==========================================================
+    // LOMBOK (compile-time code generation)
+    // ==========================================================
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+    testCompileOnly 'org.projectlombok:lombok'
+    testAnnotationProcessor 'org.projectlombok:lombok'
+
+    // ==========================================================
+    // TESTING
+    // ==========================================================
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    // ==========================================================
+    // PHASE 6 - SECURITY (uncomment when we start Phase 6)
+    // ==========================================================
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
+
+    // API DOCUMENTATION
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1'
+    // ==========================================================
+    // PHASE 8 - BONUS (uncomment if you do bonus features)
+    // ==========================================================
+    // implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    // implementation 'com.bucket4j:bucket4j-core:8.10.1'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
